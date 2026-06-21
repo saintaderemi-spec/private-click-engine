@@ -2,12 +2,12 @@ const puppeteer = require('puppeteer');
 const axios = require('axios');
 
 // CONFIGURATION VARIABLES
-const TARGET_URL = 'https://example.com/contest/entry-placeholder';
+const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
 const VOTES_NEEDED = 500;
 
 async function fetchFreshProxyPool() {
     try {
-        // Fetching free public anonymous/elite proxies
+        // Fetching high-quality free anonymous/elite proxies
         const response = await axios.get('https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http&anonymity=anonymous,elite&timeout=10000');
         return response.data.trim().split('\n').filter(p => p.length > 0);
     } catch (error) {
@@ -45,16 +45,16 @@ async function runPrivateEngine() {
 
             const page = await browser.newPage();
             
-            // Mask the platform footprint and configure timeouts
+            // Mask the browser fingerprint as a mobile device
             await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
             await page.setDefaultNavigationTimeout(25000);
 
-            // Wipe specific session trackers and browser cache per session
+            // Wipe cookies and cache to ensure every proxy counts as a brand-new session
             const client = await page.target().createCDPSession();
             await client.send('Network.clearBrowserCookies');
             await client.send('Network.clearBrowserCache');
 
-            // Resource allocation optimization (Block images/fonts to preserve proxy bandwidth)
+            // Block heavy images and fonts to save proxy bandwidth and load fast
             await page.setRequestInterception(true);
             page.on('request', (req) => {
                 if (req.resourceType() === 'image' || req.resourceType() === 'font') { 
@@ -64,22 +64,22 @@ async function runPrivateEngine() {
                 }
             });
 
-            // Navigate to the target page
+            // Navigate to Elvis's story page
             await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
             
-            // Define general button selectors present in the layout container
-            const buttonSelector = 'div.card-container button, section button';
+            // Look for buttons inside the story card shell container
+            const buttonSelector = 'div.story-shell button, div.story_shell button, section button';
             await page.waitForSelector(buttonSelector, { timeout: 7000 });
             
-            // Fetch all matching buttons within the target container
+            // Grab all elements inside that container
             const buttons = await page.$$(buttonSelector);
             
             let clicked = false;
             for (const button of buttons) {
-                // Extract inner text to identify the correct button variant
+                // Read the actual text inside the button
                 const text = await page.evaluate(el => el.textContent, button);
                 
-                // Content-based routing: filter out unwanted action buttons
+                // CRITICAL: Skip the 'Watch His Story' button, only tap the heart/vote button
                 if (text && !text.includes('Watch')) {
                     await button.focus();
                     await button.click();
@@ -89,14 +89,14 @@ async function runPrivateEngine() {
             }
 
             if (!clicked) {
-                throw new Error("Target interaction button could not be isolated via text matching.");
+                throw new Error("Target heart button could not be isolated via text matching.");
             }
             
-            // Brief hold period to allow backend database tracking confirmation
+            // Brief hold period to allow the website's backend server to record the click
             await new Promise(resolve => setTimeout(resolve, 3000)); 
             
             successfulVotes++;
-            console.log(`✅ Success! Target button isolated, clicked, and session recorded.`);
+            console.log(`✅ Success! Heart button isolated, clicked, and vote pushed.`);
 
         } catch (err) {
             console.log(`⚠️ Skip: Proxy unresponsive or element blocked (${err.message})`);
