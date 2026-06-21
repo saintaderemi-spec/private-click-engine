@@ -2,12 +2,12 @@ const puppeteer = require('puppeteer');
 const axios = require('axios');
 
 // CONFIGURATION VARIABLES
-const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
-const TARGET_SELECTOR = 'div.story_shell button, div.story-shell button, section button';
+const TARGET_URL = 'https://example.com/contest/entry-placeholder';
 const VOTES_NEEDED = 500;
 
 async function fetchFreshProxyPool() {
     try {
+        // Fetching free public anonymous/elite proxies
         const response = await axios.get('https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http&anonymity=anonymous,elite&timeout=10000');
         return response.data.trim().split('\n').filter(p => p.length > 0);
     } catch (error) {
@@ -45,38 +45,66 @@ async function runPrivateEngine() {
 
             const page = await browser.newPage();
             
-            // Mask the platform footprint
+            // Mask the platform footprint and configure timeouts
             await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
             await page.setDefaultNavigationTimeout(25000);
 
-            // Wipe specific session trackers
+            // Wipe specific session trackers and browser cache per session
             const client = await page.target().createCDPSession();
             await client.send('Network.clearBrowserCookies');
             await client.send('Network.clearBrowserCache');
 
-            // Resource allocation optimization
+            // Resource allocation optimization (Block images/fonts to preserve proxy bandwidth)
             await page.setRequestInterception(true);
             page.on('request', (req) => {
-                if (req.resourceType() === 'image' || req.resourceType() === 'font') { req.abort(); } 
-                else { req.continue(); }
+                if (req.resourceType() === 'image' || req.resourceType() === 'font') { 
+                    req.abort(); 
+                } else { 
+                    req.continue(); 
+                }
             });
 
+            // Navigate to the target page
             await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
-            await page.waitForSelector(TARGET_SELECTOR, { timeout: 7000 });
             
-            await page.focus(TARGET_SELECTOR);
-            await page.click(TARGET_SELECTOR);
+            // Define general button selectors present in the layout container
+            const buttonSelector = 'div.card-container button, section button';
+            await page.waitForSelector(buttonSelector, { timeout: 7000 });
             
+            // Fetch all matching buttons within the target container
+            const buttons = await page.$$(buttonSelector);
+            
+            let clicked = false;
+            for (const button of buttons) {
+                // Extract inner text to identify the correct button variant
+                const text = await page.evaluate(el => el.textContent, button);
+                
+                // Content-based routing: filter out unwanted action buttons
+                if (text && !text.includes('Watch')) {
+                    await button.focus();
+                    await button.click();
+                    clicked = true;
+                    break;
+                }
+            }
+
+            if (!clicked) {
+                throw new Error("Target interaction button could not be isolated via text matching.");
+            }
+            
+            // Brief hold period to allow backend database tracking confirmation
             await new Promise(resolve => setTimeout(resolve, 3000)); 
             
             successfulVotes++;
-            console.log(`✅ Success! Session reset and vote pushed.`);
+            console.log(`✅ Success! Target button isolated, clicked, and session recorded.`);
 
         } catch (err) {
-            console.log(`⚠️ Skip: Proxy unresponsive or blocked (${err.message})`);
+            console.log(`⚠️ Skip: Proxy unresponsive or element blocked (${err.message})`);
         }
 
-        if (browser) await browser.close();
+        if (browser) {
+            await browser.close();
+        }
     }
 }
 
