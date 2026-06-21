@@ -8,7 +8,7 @@ const VOTES_NEEDED = 500;
 
 async function fetchFreshProxyPool() {
     try {
-        const response = await axios.get('https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http');
+        const response = await axios.get('https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http&anonymity=anonymous,elite&timeout=10000');
         return response.data.trim().split('\n').filter(p => p.length > 0);
     } catch (error) {
         console.error('Failed to pull free proxies:', error.message);
