@@ -1,9 +1,9 @@
 const puppeteer = require('puppeteer');
 const axios = require('axios');
 
-// CONFIGURATION VARIABLES (Change these before every run!)
+// CONFIGURATION VARIABLES
 const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
-const TARGET_SELECTOR = 'div.story_shell button, div.story-shell button, section button'; // Replace with the exact CSS class or ID of the like button
+const TARGET_SELECTOR = 'div.story_shell button, div.story-shell button, section button';
 const VOTES_NEEDED = 500;
 
 async function fetchFreshProxyPool() {
@@ -34,26 +34,47 @@ async function runPrivateEngine() {
         try {
             browser = await puppeteer.launch({
                 headless: true,
-                args: [`--proxy-server=http://${currentProxy}`, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-            });
+                args: [
+                    `--proxy-server=http://${currentProxy}`, 
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox', 
+                    '--disable-dev-shm-usage',
+                    '--disable-blink-features=AutomationControlled' // Hides the fact that it is a bot
+                ]
+            ]);
 
             const page = await browser.newPage();
-            await page.setDefaultNavigationTimeout(20000);
+            
+            // Set a real mobile user agent so the site treats it like a real phone click
+            await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
+            
+            await page.setDefaultNavigationTimeout(25000);
 
-            // Turn off images to load pages lightning fast on slow proxies
+            // Clear all previous cookies and storage states completely
+            const client = await page.target().createCDPSession();
+            await client.send('Network.clearBrowserCookies');
+            await client.send('Network.clearBrowserCache');
+
+            // Optimise asset loading
             await page.setRequestInterception(true);
             page.on('request', (req) => {
                 if (req.resourceType() === 'image' || req.resourceType() === 'font') { req.abort(); } 
                 else { req.continue(); }
             });
 
+            // Navigate and click natively
             await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
-            await page.waitForSelector(TARGET_SELECTOR, { timeout: 5000 });
+            await page.waitForSelector(TARGET_SELECTOR, { timeout: 7000 });
+            
+            // Focus and click like a human tap
+            await page.focus(TARGET_SELECTOR);
             await page.click(TARGET_SELECTOR);
             
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Brief hold to guarantee tracking logs it
+            // Wait slightly longer to let the website's database process the API call
+            await new Promise(resolve => setTimeout(resolve, 3000)); 
+            
             successfulVotes++;
-            console.log(`✅ Success! Vote registered dynamically.`);
+            console.log(`✅ Success! Session reset and vote pushed.`);
 
         } catch (err) {
             console.log(`⚠️ Skip: Proxy unresponsive or blocked (${err.message})`);
