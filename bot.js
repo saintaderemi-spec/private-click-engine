@@ -5,7 +5,7 @@ const path = require('path');
 
 // CONFIGURATION VARIABLES
 const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
-const VOTES_NEEDED = 500;
+const VOTES_NEEDED = 362;
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
 
 // Helper to load previously used IPs from the GitHub Actions cache
