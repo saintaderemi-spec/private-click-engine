@@ -4,7 +4,7 @@ const axios = require('axios');
 // CONFIGURATION VARIABLES (Change these before every run!)
 const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
 const TARGET_SELECTOR = 'div.story_action_buttons button'; // Replace with the exact CSS class or ID of the like button
-const VOTES_NEEDED = 1000;
+const VOTES_NEEDED = 500;
 
 async function fetchFreshProxyPool() {
     try {
