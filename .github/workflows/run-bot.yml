@@ -1,23 +1,31 @@
 name: Run Private Click Engine
 
 on:
-  workflow_dispatch: # This creates a manual "Run" button on GitHub
+  workflow_dispatch:
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository code
-      uses: actions/checkout@v4
+      - name: Checkout repository code
+        uses: actions/checkout@v4
 
-    - name: Set up Node.js environment
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
+      - name: Set up Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-    - name: Install dependencies
-      run: npm install
+      # CRITICAL: This restores used_proxies.json from the last run if it exists
+      - name: Restore Used Proxies Cache
+        uses: actions/cache@v4
+        with:
+          path: used_proxies.json
+          key: proxy-cache-${{ github.run_id }}-${{ github.run_number }}
+          restore-keys: |
+            proxy-cache-
 
-    - name: Run the automation script
-      run: node bot.js
+      - name: Install dependencies
+        run: npm install puppeteer axios
+
+      - name: Run the automation script
+        run: node bot.js
