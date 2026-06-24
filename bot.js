@@ -5,7 +5,8 @@ const path = require('path');
 
 // CONFIGURATION VARIABLES
 const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
-const VOTES_NEEDED = 600;
+const VOTES_NEEDED = 500;
+const BATCH_SIZE = 3; // 3 concurrent windows running at the exact same time
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
 
 // Helper to load previously used IPs from the GitHub Actions cache
@@ -75,81 +76,98 @@ async function runPrivateEngine() {
     console.log(`📊 History Filter: Loaded ${usedProxies.size} unique previously-burned IPs.`);
     console.log(`📶 Fresh Raw Pool: Fetched ${proxyPool.length} proxy nodes.`);
 
-    for (let i = 0; i < proxyPool.length; i++) {
+    // Loop through the proxy pool skipping by the batch size (3) each iteration
+    for (let i = 0; i < proxyPool.length; i += BATCH_SIZE) {
         if (successfulVotes >= VOTES_NEEDED) {
             console.log('🎯 SUCCESS! Target goal achieved. Terminating execution loop safely.');
             break;
         }
 
-        const currentProxy = proxyPool[i];
+        // Extract a subset batch of up to 3 proxies
+        const currentBatch = proxyPool.slice(i, i + BATCH_SIZE);
+        console.log(`\n📦 Initializing concurrent batch window group [Chunk: ${Math.floor(i / BATCH_SIZE) + 1}]`);
 
-        // DEDUPLICATION CHECK: Skip immediately if we used this node in an older run
-        if (usedProxies.has(currentProxy)) {
-            continue;
-        }
+        // Map the batch items into parallel executing promises
+        const batchPromises = currentBatch.map(async (currentProxy, index) => {
+            const workerId = index + 1;
 
-        console.log(`[Progress: ${successfulVotes}/${VOTES_NEEDED}] Launching window through IP: ${currentProxy}`);
-        usedProxies.add(currentProxy);
-        saveUsedProxies(usedProxies); // Instantly write state to prevent overlapping data losses
-
-        let browser;
-        try {
-            browser = await puppeteer.launch({
-                headless: true,
-                args: [
-                    `--proxy-server=http://${currentProxy}`,
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-blink-features=AutomationControlled'
-                ]
-            });
-
-            const page = await browser.newPage();
-            await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
-            await page.setDefaultNavigationTimeout(25000);
-
-            const client = await page.target().createCDPSession();
-            await client.send('Network.clearBrowserCookies');
-            await client.send('Network.clearBrowserCache');
-
-            await page.setRequestInterception(true);
-            page.on('request', (req) => {
-                if (req.resourceType() === 'image' || req.resourceType() === 'font') { req.abort(); } 
-                else { req.continue(); }
-            });
-
-            await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
-            
-            const buttonSelector = 'div.story-shell button, div.story_shell button, section button';
-            await page.waitForSelector(buttonSelector, { timeout: 7000 });
-            
-            const buttons = await page.$$(buttonSelector);
-            let clicked = false;
-            for (const button of buttons) {
-                const text = await page.evaluate(el => el.textContent, button);
-                if (text && !text.includes('Watch')) {
-                    await button.focus();
-                    await button.click();
-                    clicked = true;
-                    break;
-                }
+            // DEDUPLICATION CHECK: Skip immediately if used in an older run
+            if (usedProxies.has(currentProxy)) {
+                return;
             }
 
-            if (!clicked) { throw new Error("Target heart button missing."); }
-            
-            await new Promise(resolve => setTimeout(resolve, 3000)); 
-            successfulVotes++;
-            console.log(`✅ Success! Unique session vote pushed successfully.`);
+            console.log(`[Worker ${workerId}] Launching window through IP: ${currentProxy} (Progress: ${successfulVotes}/${VOTES_NEEDED})`);
+            usedProxies.add(currentProxy);
 
-        } catch (err) {
-            console.log(`⚠️ Skip: Proxy unresponsive or element blocked (${err.message})`);
-        }
+            let browser;
+            try {
+                browser = await puppeteer.launch({
+                    headless: true,
+                    args: [
+                        `--proxy-server=http://${currentProxy}`,
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-gpu', // Essential optimization to reduce memory usage in parallel runs
+                        '--no-zygote'    // Stops additional background execution memory allocations
+                    ]
+                });
 
-        if (browser) await browser.close();
+                const page = await browser.newPage();
+                await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
+                
+                // LOWERED TIMEOUT: 12 seconds so one completely dead proxy doesn't hold up the other 2 fast windows
+                await page.setDefaultNavigationTimeout(12000);
+
+                const client = await page.target().createCDPSession();
+                await client.send('Network.clearBrowserCookies');
+                await client.send('Network.clearBrowserCache');
+
+                await page.setRequestInterception(true);
+                page.on('request', (req) => {
+                    if (req.resourceType() === 'image' || req.resourceType() === 'font') { req.abort(); } 
+                    else { req.continue(); }
+                });
+
+                await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
+                
+                const buttonSelector = 'div.story-shell button, div.story_shell button, section button';
+                await page.waitForSelector(buttonSelector, { timeout: 6000 });
+                
+                const buttons = await page.$$(buttonSelector);
+                let clicked = false;
+                for (const button of buttons) {
+                    const text = await page.evaluate(el => el.textContent, button);
+                    if (text && !text.includes('Watch')) {
+                        await button.focus();
+                        await button.click();
+                        clicked = true;
+                        break;
+                    }
+                }
+
+                if (!clicked) { throw new Error("Target heart button missing."); }
+                
+                await new Promise(resolve => setTimeout(resolve, 3000)); 
+                successfulVotes++;
+                console.log(`[Worker ${workerId}] ✅ Success! Unique session vote pushed.`);
+
+            } catch (err) {
+                console.log(`[Worker ${workerId}] ⚠️ Skip: Node unresponsive (${err.message})`);
+            } finally {
+                if (browser) await browser.close();
+            }
+        });
+
+        // Block the main execution thread until all 3 browser promises settle completely
+        await Promise.all(batchPromises);
+
+        // Sync the file registry immediately after each batch resolves to secure the state
+        saveUsedProxies(usedProxies);
     }
     
-    // Final state preservation pass at workflow tear-down
+    // Final defensive state preservation check at teardown
     saveUsedProxies(usedProxies);
 }
 
