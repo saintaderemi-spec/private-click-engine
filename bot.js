@@ -6,7 +6,7 @@ const path = require('path');
 // CONFIGURATION VARIABLES
 const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
 const VOTES_NEEDED = 500;
-const BATCH_SIZE = 3; // 3 concurrent windows running at the exact same time
+const BATCH_SIZE = 2; // 3 concurrent windows running at the exact same time
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
 
 // Helper to load previously used IPs from the GitHub Actions cache
@@ -118,7 +118,7 @@ async function runPrivateEngine() {
                 await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
                 
                 // LOWERED TIMEOUT: 12 seconds so one completely dead proxy doesn't hold up the other 2 fast windows
-                await page.setDefaultNavigationTimeout(12000);
+                await page.setDefaultNavigationTimeout(7000);
 
                 const client = await page.target().createCDPSession();
                 await client.send('Network.clearBrowserCookies');
