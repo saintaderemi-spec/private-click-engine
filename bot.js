@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // CONFIGURATION VARIABLES
-const TARGET_URL = 'https://example.com/api/resource';
+const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
 const VOTES_NEEDED = 500;
 const CONCURRENT_WORKERS = 3; // Number of continuous parallel windows
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
