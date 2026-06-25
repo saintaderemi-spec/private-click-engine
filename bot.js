@@ -68,8 +68,8 @@ async function fetchFreshProxyPool() {
         }
     }
     
-    // Normalize string formatting, strip whitespace boundaries, and filter duplicates
-    return [...new Set(combinedProxies.map(p => p.trim()).filter(p => p.length > 0))];
+    // Clean formatting, strip existing http:// protocols, and remove duplicates
+return [...new Set(combinedProxies.map(p => p.trim().replace(/^https?:\/\//i, '')).filter(p => p.length > 0))];
 }
 
 async function runPrivateEngine() {
