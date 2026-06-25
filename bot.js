@@ -34,7 +34,13 @@ async function fetchFreshProxyPool() {
     const urls = [
         'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http&anonymity=anonymous,elite&timeout=10000',
         'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-        'https://raw.githubusercontent.com/Fate0/proxylist/master/proxy.list'
+        'https://raw.githubusercontent.com/Fate0/proxylist/master/proxy.list',
+        
+        // Additional Global Plain-Text Endpoints
+        'https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_elite.txt',
+        'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt',
+        'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt',
+        'https://api.openproxylist.xyz/http.txt'
     ];
 
     let combinedProxies = [];
@@ -42,7 +48,10 @@ async function fetchFreshProxyPool() {
         try {
             const response = await axios.get(url, { timeout: 8000 });
             let lines = [];
+            
+            // Branch logic based on underlying structural format rules
             if (url.includes('proxy.list')) {
+                // Parse lines structured as individual JSON string blocks
                 lines = response.data.trim().split('\n').map(line => {
                     try {
                         const obj = JSON.parse(line);
@@ -50,13 +59,16 @@ async function fetchFreshProxyPool() {
                     } catch { return null; }
                 }).filter(Boolean);
             } else {
+                // Parse standard raw plain-text lists (IP:PORT format per line)
                 lines = response.data.trim().split('\n');
             }
             combinedProxies = combinedProxies.concat(lines);
         } catch (error) {
-            console.log(`⚠️ Stream endpoint skipped: ${url.split('/')[2]} unavailable`);
+            console.log(`⚠️ Stream endpoint skipped: ${url.split('/')[2] || 'Host'} unavailable`);
         }
     }
+    
+    // Normalize string formatting, strip whitespace boundaries, and filter duplicates
     return [...new Set(combinedProxies.map(p => p.trim()).filter(p => p.length > 0))];
 }
 
