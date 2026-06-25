@@ -6,10 +6,9 @@ const path = require('path');
 // CONFIGURATION VARIABLES
 const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
 const VOTES_NEEDED = 500;
-const BATCH_SIZE = 2; // 3 concurrent windows running at the exact same time
+const CONCURRENT_WORKERS = 3; // Number of continuous parallel windows
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
 
-// Helper to load previously used IPs from the GitHub Actions cache
 function loadUsedProxies() {
     try {
         if (fs.existsSync(CACHE_FILE)) {
@@ -22,7 +21,6 @@ function loadUsedProxies() {
     return new Set();
 }
 
-// Helper to save used IPs back to the cache file
 function saveUsedProxies(usedSet) {
     try {
         fs.writeFileSync(CACHE_FILE, JSON.stringify([...usedSet]), 'utf8');
@@ -40,13 +38,10 @@ async function fetchFreshProxyPool() {
     ];
 
     let combinedProxies = [];
-
     for (const url of urls) {
         try {
             const response = await axios.get(url, { timeout: 8000 });
             let lines = [];
-            
-            // Handle JSON-lines format vs standard plain-text raw lists
             if (url.includes('proxy.list')) {
                 lines = response.data.trim().split('\n').map(line => {
                     try {
@@ -57,14 +52,11 @@ async function fetchFreshProxyPool() {
             } else {
                 lines = response.data.trim().split('\n');
             }
-            
             combinedProxies = combinedProxies.concat(lines);
         } catch (error) {
             console.log(`⚠️ Stream endpoint skipped: ${url.split('/')[2]} unavailable`);
         }
     }
-
-    // Clean formatting and remove duplicates within the current pull
     return [...new Set(combinedProxies.map(p => p.trim()).filter(p => p.length > 0))];
 }
 
@@ -76,28 +68,21 @@ async function runPrivateEngine() {
     console.log(`📊 History Filter: Loaded ${usedProxies.size} unique previously-burned IPs.`);
     console.log(`📶 Fresh Raw Pool: Fetched ${proxyPool.length} proxy nodes.`);
 
-    // Loop through the proxy pool skipping by the batch size (3) each iteration
-    for (let i = 0; i < proxyPool.length; i += BATCH_SIZE) {
-        if (successfulVotes >= VOTES_NEEDED) {
-            console.log('🎯 SUCCESS! Target goal achieved. Terminating execution loop safely.');
-            break;
-        }
+    // Filter out used proxies immediately before starting the workers
+    let activeQueue = proxyPool.filter(proxy => !usedProxies.has(proxy));
+    console.log(`⚡ Active Queue Size after filtering history: ${activeQueue.length}`);
 
-        // Extract a subset batch of up to 3 proxies
-        const currentBatch = proxyPool.slice(i, i + BATCH_SIZE);
-        console.log(`\n📦 Initializing concurrent batch window group [Chunk: ${Math.floor(i / BATCH_SIZE) + 1}]`);
+    // Worker function that continuously pulls from the shared queue
+    async function worker(workerId) {
+        while (activeQueue.length > 0 && successfulVotes < VOTES_NEEDED) {
+            const currentProxy = activeQueue.shift(); // Pull the next proxy out of the line
+            if (!currentProxy) break;
 
-        // Map the batch items into parallel executing promises
-        const batchPromises = currentBatch.map(async (currentProxy, index) => {
-            const workerId = index + 1;
-
-            // DEDUPLICATION CHECK: Skip immediately if used in an older run
-            if (usedProxies.has(currentProxy)) {
-                return;
-            }
-
-            console.log(`[Worker ${workerId}] Launching window through IP: ${currentProxy} (Progress: ${successfulVotes}/${VOTES_NEEDED})`);
+            console.log(`[Worker ${workerId}] Launching window -> IP: ${currentProxy} (Progress: ${successfulVotes}/${VOTES_NEEDED})`);
+            
+            // Mark as used immediately and save to disk
             usedProxies.add(currentProxy);
+            saveUsedProxies(usedProxies);
 
             let browser;
             try {
@@ -109,16 +94,16 @@ async function runPrivateEngine() {
                         '--disable-setuid-sandbox',
                         '--disable-dev-shm-usage',
                         '--disable-blink-features=AutomationControlled',
-                        '--disable-gpu', // Essential optimization to reduce memory usage in parallel runs
-                        '--no-zygote'    // Stops additional background execution memory allocations
+                        '--disable-gpu',
+                        '--no-zygote'
                     ]
                 });
 
                 const page = await browser.newPage();
                 await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
                 
-                // LOWERED TIMEOUT: 12 seconds so one completely dead proxy doesn't hold up the other 2 fast windows
-                await page.setDefaultNavigationTimeout(7000);
+                // STABLE TIMEOUT: Raised back up to 22 seconds so slow proxies actually load
+                await page.setDefaultNavigationTimeout(22000);
 
                 const client = await page.target().createCDPSession();
                 await client.send('Network.clearBrowserCookies');
@@ -126,14 +111,14 @@ async function runPrivateEngine() {
 
                 await page.setRequestInterception(true);
                 page.on('request', (req) => {
-                    if (req.resourceType() === 'image' || req.resourceType() === 'font') { req.abort(); } 
+                    if (['image', 'font', 'stylesheet'].includes(req.resourceType())) { req.abort(); } 
                     else { req.continue(); }
                 });
 
                 await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
                 
                 const buttonSelector = 'div.story-shell button, div.story_shell button, section button';
-                await page.waitForSelector(buttonSelector, { timeout: 6000 });
+                await page.waitForSelector(buttonSelector, { timeout: 7000 });
                 
                 const buttons = await page.$$(buttonSelector);
                 let clicked = false;
@@ -151,24 +136,27 @@ async function runPrivateEngine() {
                 
                 await new Promise(resolve => setTimeout(resolve, 3000)); 
                 successfulVotes++;
-                console.log(`[Worker ${workerId}] ✅ Success! Unique session vote pushed.`);
+                console.log(`[Worker ${workerId}] ✅ Success! Vote logged.`);
 
             } catch (err) {
-                console.log(`[Worker ${workerId}] ⚠️ Skip: Node unresponsive (${err.message})`);
+                console.log(`[Worker ${workerId}] ⚠️ Skip: (${err.message})`);
             } finally {
                 if (browser) await browser.close();
             }
-        });
-
-        // Block the main execution thread until all 3 browser promises settle completely
-        await Promise.all(batchPromises);
-
-        // Sync the file registry immediately after each batch resolves to secure the state
-        saveUsedProxies(usedProxies);
+        }
     }
+
+    // Spin up independent workers that process the queue concurrently
+    const workers = [];
+    for (let w = 0; w < CONCURRENT_WORKERS; w++) {
+        workers.push(worker(w + 1));
+    }
+
+    // Wait until all workers have completely emptied the queue
+    await Promise.all(workers);
     
-    // Final defensive state preservation check at teardown
     saveUsedProxies(usedProxies);
+    console.log('\n🎯 Target loop execution completed.');
 }
 
 runPrivateEngine();
