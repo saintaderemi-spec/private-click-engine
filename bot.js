@@ -5,7 +5,7 @@ const path = require('path');
 // ==========================================
 // CONFIGURATION VARIABLES (GENERIC STANDARD)
 // ==========================================
-const TARGET_URL = 'https://www.cwaynutriyo.com/api/analytics/event';
+const TARGET_URL = 'https://www.cwaynutriyo.com/api/vote';
 const RUN_LIMIT_COUNT = 1000;          // Total successful actions needed
 const CONCURRENT_WORKERS = 3;        // Number of parallel workers
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
