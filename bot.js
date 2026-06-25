@@ -5,7 +5,7 @@ const path = require('path');
 // ==========================================
 // CONFIGURATION VARIABLES (GENERIC STANDARD)
 // ==========================================
-const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
+const TARGET_URL = 'https://www.cwaynutriyo.com/api/analytics/event';
 const RUN_LIMIT_COUNT = 1000;          // Total successful actions needed
 const CONCURRENT_WORKERS = 3;        // Number of parallel workers
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
@@ -70,8 +70,15 @@ async function fetchFreshProxyPool() {
         }
     }
     
-    // Format cleanup: Strip protocols and remove duplicates
-    return [...new Set(combinedProxies.map(p => p.trim().replace(/^https?:\/\//i, '')).filter(p => p.length > 0))];
+    // Format cleanup: Strip protocols, remove duplicates, and filter non-proxy strings
+    return [...new Set(combinedProxies
+        .map(p => p.trim().replace(/^https?:\/\//i, ''))
+        // 1. Keep lines that are not empty
+        // 2. Drop lines that start with Markdown or text comments (#)
+        // 3. Verify the line contains numbers (avoids string/text headers)
+        // 4. Verify it has a colon separating IP and Port
+        .filter(p => p.length > 0 && !p.startsWith('#') && /\d/.test(p) && p.includes(':'))
+    )];
 }
 
 // ==========================================
@@ -108,13 +115,21 @@ async function startNetworkEngine() {
                 // Execute low-level direct data transport block using the proxy coordinate socket
                 const response = await axios.post(TARGET_URL, 
                     {
-                        testId: 'generic_payload_data'
+                        event: "vote_blocked",
+                        campaign: "",
+                        device: "mobile",
+                        language: "en-US",
+                        medium: "direct",
+                        reason: "already voted",
+                        referrerHost: "",
+                        sessionId: "0edoumabw9yomqtyxcff", // Replicated browser tracking hash
+                        source: "direct"
                     }, 
                     {
-                        timeout: 6000, 
+                        timeout: 12000, // Raised to 12s to help slow free proxies clear TLS handshakes
                         headers: {
                             'Content-Type': 'application/json',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
                         },
                         proxy: {
                             protocol: 'http',
@@ -123,7 +138,6 @@ async function startNetworkEngine() {
                         }
                     }
                 );
-
                 if (response.status === 200 || response.status === 201) {
                     successfulCount++;
                     console.log(`[Worker ${workerId}] ✅ Success! Response Code: ${response.status}`);
