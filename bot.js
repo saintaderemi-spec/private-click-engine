@@ -5,7 +5,7 @@ const path = require('path');
 // ==========================================
 // CONFIGURATION VARIABLES (GENERIC STANDARD)
 // ==========================================
-const TARGET_URL = 'https://api.example.com/v1/generic-endpoint';
+const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
 const RUN_LIMIT_COUNT = 1000;          // Total successful actions needed
 const CONCURRENT_WORKERS = 3;        // Number of parallel workers
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
