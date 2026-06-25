@@ -115,15 +115,19 @@ async function startNetworkEngine() {
                 // Execute low-level direct data transport block using the proxy coordinate socket
                 const response = await axios.post(TARGET_URL, 
                     {
-                        event: "vote_blocked",
+                        event: "vote_cast",
                         campaign: "",
                         device: "mobile",
                         language: "en-US",
                         medium: "direct",
-                        reason: "already voted",
                         referrerHost: "",
-                        sessionId: "0edoumabw9yomqtyxcff", // Replicated browser tracking hash
-                        source: "direct"
+                        sessionId: "",
+                        source: "direct",
+                        targetId: "b0a496bb1f124a7c",
+                        targetType: "story",
+                        ts: 1782425843078,
+                        url: "/story/elvis-madichie",
+                        visitorType: "new" 
                     }, 
                     {
                         timeout: 12000, // Raised to 12s to help slow free proxies clear TLS handshakes
