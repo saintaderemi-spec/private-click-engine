@@ -150,7 +150,11 @@ visitorType: "new"
 
             } catch (err) {
                 if (err.response) {
-                    console.log(`[Worker ${workerId}] ⚠️ Endpoint Rejected Request: Status ${err.response.status}`);
+                    if (err.response.status === 407) {
+                        console.log(`[Worker ${workerId}] 🔒 Proxy Requires Authentication (407) -> Skipping Node.`);
+                    } else {
+                        console.log(`[Worker ${workerId}] ⚠️ Endpoint Rejected Request: Status ${err.response.status}`);
+                    }
                 } else {
                     console.log(`[Worker ${workerId}] ❌ Connection Dropped/Timed Out: ${err.message}`);
                 }
