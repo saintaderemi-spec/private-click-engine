@@ -1,14 +1,18 @@
-const puppeteer = require('puppeteer');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-// CONFIGURATION VARIABLES
-const TARGET_URL = 'https://www.cwaynutriyo.com/story/elvis-madichie';
-const VOTES_NEEDED = 500;
-const CONCURRENT_WORKERS = 3; // Number of continuous parallel windows
+// ==========================================
+// CONFIGURATION VARIABLES (GENERIC STANDARD)
+// ==========================================
+const TARGET_URL = 'https://api.example.com/v1/generic-endpoint';
+const RUN_LIMIT_COUNT = 1000;          // Total successful actions needed
+const CONCURRENT_WORKERS = 3;        // Number of parallel workers
 const CACHE_FILE = path.join(__dirname, 'used_proxies.json');
 
+// ==========================================
+// CACHE MANAGEMENT LAYER
+// ==========================================
 function loadUsedProxies() {
     try {
         if (fs.existsSync(CACHE_FILE)) {
@@ -29,14 +33,15 @@ function saveUsedProxies(usedSet) {
     }
 }
 
+// ==========================================
+// DATA ACQUISITION LAYER
+// ==========================================
 async function fetchFreshProxyPool() {
     console.log('📡 Aggregating proxy streams from multiple global endpoints...');
     const urls = [
         'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http&anonymity=anonymous,elite&timeout=10000',
         'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
         'https://raw.githubusercontent.com/Fate0/proxylist/master/proxy.list',
-        
-        // Additional Global Plain-Text Endpoints
         'https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_elite.txt',
         'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt',
         'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt',
@@ -49,9 +54,7 @@ async function fetchFreshProxyPool() {
             const response = await axios.get(url, { timeout: 8000 });
             let lines = [];
             
-            // Branch logic based on underlying structural format rules
             if (url.includes('proxy.list')) {
-                // Parse lines structured as individual JSON string blocks
                 lines = response.data.trim().split('\n').map(line => {
                     try {
                         const obj = JSON.parse(line);
@@ -59,7 +62,6 @@ async function fetchFreshProxyPool() {
                     } catch { return null; }
                 }).filter(Boolean);
             } else {
-                // Parse standard raw plain-text lists (IP:PORT format per line)
                 lines = response.data.trim().split('\n');
             }
             combinedProxies = combinedProxies.concat(lines);
@@ -68,107 +70,88 @@ async function fetchFreshProxyPool() {
         }
     }
     
-    // Clean formatting, strip existing http:// protocols, and remove duplicates
-return [...new Set(combinedProxies.map(p => p.trim().replace(/^https?:\/\//i, '')).filter(p => p.length > 0))];
+    // Format cleanup: Strip protocols and remove duplicates
+    return [...new Set(combinedProxies.map(p => p.trim().replace(/^https?:\/\//i, '')).filter(p => p.length > 0))];
 }
 
-async function runPrivateEngine() {
+// ==========================================
+// CORE EXECUTION ENGINE
+// ==========================================
+async function startNetworkEngine() {
+    // Correctly load tracking states at initialization
     const usedProxies = loadUsedProxies();
-    let proxyPool = await fetchFreshProxyPool();
-    let successfulVotes = 0;
+    const rawPool = await fetchFreshProxyPool();
+    let successfulCount = 0;
 
-    console.log(`📊 History Filter: Loaded ${usedProxies.size} unique previously-burned IPs.`);
-    console.log(`📶 Fresh Raw Pool: Fetched ${proxyPool.length} proxy nodes.`);
+    console.log(`\n📊 History Filter: Loaded ${usedProxies.size} unique previously-used entries.`);
+    console.log(`📶 Fresh Raw Pool: Fetched ${rawPool.length} network targets.`);
 
-    // Filter out used proxies immediately before starting the workers
-    let activeQueue = proxyPool.filter(proxy => !usedProxies.has(proxy));
-    console.log(`⚡ Active Queue Size after filtering history: ${activeQueue.length}`);
+    // Apply history filter to clean the active tracking line
+    let activeQueue = rawPool.filter(proxy => !usedProxies.has(proxy));
+    console.log(`⚡ Active Queue Size after history purge: ${activeQueue.length}\n`);
 
-    // Worker function that continuously pulls from the shared queue
+    // Worker Definition
     async function worker(workerId) {
-        while (activeQueue.length > 0 && successfulVotes < VOTES_NEEDED) {
-            const currentProxy = activeQueue.shift(); // Pull the next proxy out of the line
+        while (activeQueue.length > 0 && successfulCount < RUN_LIMIT_COUNT) {
+            const currentProxy = activeQueue.shift();
             if (!currentProxy) break;
 
-            console.log(`[Worker ${workerId}] Launching window -> IP: ${currentProxy} (Progress: ${successfulVotes}/${VOTES_NEEDED})`);
+            console.log(`[Worker ${workerId}] Processing with Proxy -> ${currentProxy} (Progress: ${successfulCount}/${RUN_LIMIT_COUNT})`);
             
-            // Mark as used immediately and save to disk
+            // Instantly flag and commit changes to disk to guarantee cache integrity
             usedProxies.add(currentProxy);
             saveUsedProxies(usedProxies);
 
-            let browser;
+            const [host, port] = currentProxy.split(':');
+
             try {
-                browser = await puppeteer.launch({
-                    headless: true,
-                    args: [
-                        `--proxy-server=http://${currentProxy}`,
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-gpu',
-                        '--no-zygote'
-                    ]
-                });
-
-                const page = await browser.newPage();
-                await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
-                
-                // STABLE TIMEOUT: Raised back up to 22 seconds so slow proxies actually load
-                await page.setDefaultNavigationTimeout(22000);
-
-                const client = await page.target().createCDPSession();
-                await client.send('Network.clearBrowserCookies');
-                await client.send('Network.clearBrowserCache');
-
-                await page.setRequestInterception(true);
-                page.on('request', (req) => {
-                    if (['image', 'font', 'stylesheet'].includes(req.resourceType())) { req.abort(); } 
-                    else { req.continue(); }
-                });
-
-                await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
-                
-                const buttonSelector = 'div.story-shell button, div.story_shell button, section button';
-                await page.waitForSelector(buttonSelector, { timeout: 7000 });
-                
-                const buttons = await page.$$(buttonSelector);
-                let clicked = false;
-                for (const button of buttons) {
-                    const text = await page.evaluate(el => el.textContent, button);
-                    if (text && !text.includes('Watch')) {
-                        await button.focus();
-                        await button.click();
-                        clicked = true;
-                        break;
+                // Execute low-level direct data transport block using the proxy coordinate socket
+                const response = await axios.post(TARGET_URL, 
+                    {
+                        testId: 'generic_payload_data'
+                    }, 
+                    {
+                        timeout: 6000, 
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        },
+                        proxy: {
+                            protocol: 'http',
+                            host: host,
+                            port: parseInt(port, 10)
+                        }
                     }
+                );
+
+                if (response.status === 200 || response.status === 201) {
+                    successfulCount++;
+                    console.log(`[Worker ${workerId}] ✅ Success! Response Code: ${response.status}`);
                 }
 
-                if (!clicked) { throw new Error("Target heart button missing."); }
-                
-                await new Promise(resolve => setTimeout(resolve, 3000)); 
-                successfulVotes++;
-                console.log(`[Worker ${workerId}] ✅ Success! Vote logged.`);
-
             } catch (err) {
-                console.log(`[Worker ${workerId}] ⚠️ Skip: (${err.message})`);
-            } finally {
-                if (browser) await browser.close();
+                if (err.response) {
+                    console.log(`[Worker ${workerId}] ⚠️ Endpoint Rejected Request: Status ${err.response.status}`);
+                } else {
+                    console.log(`[Worker ${workerId}] ❌ Connection Dropped/Timed Out: ${err.message}`);
+                }
             }
         }
     }
 
-    // Spin up independent workers that process the queue concurrently
+    // Allocate thread-like tracks based on configuration capacity limits
     const workers = [];
     for (let w = 0; w < CONCURRENT_WORKERS; w++) {
         workers.push(worker(w + 1));
     }
 
-    // Wait until all workers have completely emptied the queue
+    // Securely await the complete resolution of all active execution tracks
     await Promise.all(workers);
     
+    // Final save safeguard sync before exiting
     saveUsedProxies(usedProxies);
-    console.log('\n🎯 Target loop execution completed.');
+    console.log('\n🎯 High-velocity processing queue completed.');
 }
 
-runPrivateEngine();
+// Fire execution
+startNetworkEngine();
