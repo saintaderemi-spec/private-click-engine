@@ -33,13 +33,13 @@ async function fetchFreshProxyPool() {
     console.log('📡 Aggregating proxy streams from multiple global endpoints...');
     const urls = [
         'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http&anonymity=anonymous,elite&timeout=10000',
-        'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-        'https://raw.githubusercontent.com/Fate0/proxylist/master/proxy.list'
+        'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt'
+        'https://raw.githubusercontent.com/Fate0/proxylist/master/proxy.list'
         'https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_elite.txt',
         'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt',
         'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt',
         'https://api.openproxylist.xyz/http.txt'
-    ];
+                ];
 
     let combinedProxies = [];
     for (const url of urls) {
